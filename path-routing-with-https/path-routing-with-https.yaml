@@ -1,0 +1,82 @@
+---
+
+- name: Deploy an APIcast gateway with Path Routing and HTTPS
+  gather_facts: no
+  hosts: localhost
+  tasks:
+  - name: Generate a private key
+    openssl_privatekey: 
+      path: '{{ playbook_dir }}/config/tls.key'
+      size: 1024
+      state: present
+
+  - name: Generate a CSR
+    openssl_csr:
+      path: '{{ playbook_dir }}/config/tls.csr'
+      privatekey_path: '{{ playbook_dir }}/config/tls.key'
+      common_name: localhost
+      subject_alt_name: 'DNS:localhost'
+      state: present
+
+  - name: Generate a self-signed certificate
+    openssl_certificate: 
+      path: '{{ playbook_dir }}/config/tls.crt'
+      privatekey_path: '{{ playbook_dir }}/config/tls.key'
+      csr_path: '{{ playbook_dir }}/config/tls.csr'
+      provider: selfsigned
+      state: present
+
+  - name: Deploy APIcast
+    docker_container:
+      name: apicast-path-routing-with-https
+      image: quay.io/3scale/apicast:v3.4.0-rc2
+      volumes:
+      - '{{ playbook_dir }}/config:/config:ro'
+      env:
+        THREESCALE_CONFIG_FILE: /config/apicast.conf
+        APICAST_HTTPS_PORT: 8443
+        APICAST_HTTPS_CERTIFICATE: /config/tls.crt
+        APICAST_HTTPS_CERTIFICATE_KEY: /config/tls.key
+        APICAST_PATH_ROUTING: 'true'
+      ports:
+      - 8443:8443
+      cleanup: yes
+      detach: yes
+      state: started
+
+  - name: Wait for APIcast to start
+    pause:
+      seconds: 5
+    
+  - name: Ensure Service1 is working
+    uri:
+      url: https://localhost:8443/svc1?user_key=dummy
+      method: GET
+      timeout: 5
+      status_code: 200
+      validate_certs: no
+    register: response
+
+  - name: The X-SVC HTTP header must be equal to "svc1"
+    assert:
+      that:
+      - response.x_svc == 'svc1'
+
+  - name: Ensure Service2 is working
+    uri:
+      url: https://localhost:8443/svc2?user_key=dummy
+      method: GET
+      timeout: 5
+      status_code: 200
+      validate_certs: no
+    register: response
+
+  - name: The X-SVC HTTP header must be equal to "svc2"
+    assert:
+      that:
+      - response.x_svc == 'svc2'
+ 
+  - name: Delete APIcast
+    docker_container:
+      name: apicast-path-routing-with-https
+      state: absent
