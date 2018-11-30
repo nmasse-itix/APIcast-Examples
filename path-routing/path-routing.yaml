@@ -1,0 +1,55 @@
+---
+
+- name: Deploy an APIcast gateway with Path Routing enabled
+  gather_facts: no
+  hosts: localhost
+  tasks:
+  - name: Deploy APIcast
+    docker_container:
+      name: apicast-path-routing
+      image: quay.io/3scale/apicast:v3.3.0
+      volumes:
+      - '{{ playbook_dir }}/config:/config:ro'
+      env:
+        THREESCALE_CONFIG_FILE: /config/apicast.conf
+        APICAST_PATH_ROUTING: 'true'
+      ports:
+      - 8080:8080
+      cleanup: yes
+      detach: yes
+      state: started
+
+  - name: Wait for APIcast to start
+    pause:
+      seconds: 5
+    
+  - name: Ensure Service1 is working
+    uri:
+      url: http://localhost:8080/svc1?user_key=dummy
+      method: GET
+      timeout: 5
+      status_code: 200
+    register: response
+
+  - name: The X-SVC HTTP header must be equal to "svc1"
+    assert:
+      that:
+      - response.x_svc == 'svc1'
+
+  - name: Ensure Service2 is working
+    uri:
+      url: http://localhost:8080/svc2?user_key=dummy
+      method: GET
+      timeout: 5
+      status_code: 200
+    register: response
+
+  - name: The X-SVC HTTP header must be equal to "svc2"
+    assert:
+      that:
+      - response.x_svc == 'svc2'
+ 
+  - name: Delete APIcast
+    docker_container:
+      name: apicast-path-routing
+      state: absent

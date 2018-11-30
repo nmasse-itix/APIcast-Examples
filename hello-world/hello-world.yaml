@@ -1,0 +1,35 @@
+---
+
+- name: Deploy an APIcast gateway with the Echo API
+  gather_facts: no
+  hosts: localhost
+  tasks:
+  - name: Deploy APIcast
+    docker_container:
+      name: apicast-hello-world
+      image: quay.io/3scale/apicast:v3.3.0
+      volumes:
+      - '{{ playbook_dir }}/config:/config:ro'
+      env:
+        THREESCALE_CONFIG_FILE: /config/apicast.conf
+      ports:
+      - 8080:8080
+      cleanup: yes
+      detach: yes
+      state: started
+
+  - name: Wait for APIcast to start
+    pause:
+      seconds: 5
+    
+  - name: Ensure the Echo API is working
+    uri:
+      url: http://localhost:8080/?user_key=dummy
+      method: GET
+      timeout: 5
+      status_code: 200
+
+  - name: Delete APIcast
+    docker_container:
+      name: apicast-hello-world
+      state: absent
